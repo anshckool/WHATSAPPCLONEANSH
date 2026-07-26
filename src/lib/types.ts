@@ -40,5 +40,6 @@ export interface AppUser {
   is_focus_mode_active: boolean;
   focus_end_time: string | null;
   focus_session_id: string | null;
+  chat_background_url: string | null;
   updated_at: string;
 }

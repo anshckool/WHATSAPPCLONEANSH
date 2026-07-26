@@ -214,12 +214,33 @@ export function useChat() {
   }, []);
 
   /** Toggle Focus Mode on for a chosen duration (minutes). Generates a fresh
-   *  session id so the auto-reply dedup ledger resets for the new block. */
+   *  session id so the auto-reply dedup ledger resets for the new block.
+   *  Applies the change optimistically so the UI updates instantly, then
+   *  writes to the backend (the realtime subscription keeps other tabs in sync). */
   const startFocusMode = useCallback(async (minutes: number) => {
     const current = appUserRef.current;
     if (!current) return;
     const sessionId = `${current.id}-${Date.now()}`;
     const endTime = new Date(Date.now() + minutes * 60000).toISOString();
+    const next: AppUser = {
+      ...current,
+      is_focus_mode_active: true,
+      focus_end_time: endTime,
+      focus_session_id: sessionId,
+      updated_at: new Date().toISOString(),
+    };
+    appUserRef.current = next;
+    setAppUser(next);
+
+    // Drop the auto-reply ledger for any prior session so a re-started block
+    // can reply to senders again.
+    if (current.focus_session_id) {
+      await supabase
+        .from('focus_auto_replies')
+        .delete()
+        .eq('focus_session_id', current.focus_session_id);
+    }
+
     const { error: err } = await supabase
       .from('app_user')
       .update({
@@ -231,13 +252,59 @@ export function useChat() {
       .eq('id', current.id);
     if (err) {
       setError(err.message);
+      // Revert on failure.
+      appUserRef.current = current;
+      setAppUser(current);
+      return;
+    }
+
+    // Post a "connecting shortly" notice into the currently open conversation
+    // so the user (and the contact) see that focus mode is engaged.
+    const contactId = selectedRef.current;
+    if (contactId) {
+      const notice = `I will connect to you shortly — currently in a focus block (${minutes} min).`;
+      const { data, error: msgErr } = await supabase
+        .from('messages')
+        .insert({
+          contact_id: contactId,
+          is_from_me: true,
+          is_system: true,
+          content: notice,
+        })
+        .select('*')
+        .single();
+      if (!msgErr && data) {
+        const sysMsg = data as Message;
+        setMessages((prev) =>
+          prev.some((m) => m.id === sysMsg.id) ? prev : [...prev, sysMsg],
+        );
+        setConversations((prev) =>
+          prev
+            .map((c) => (c.id === contactId ? { ...c, last_message: sysMsg } : c))
+            .sort((a, b) => {
+              const ta = a.last_message?.created_at ?? a.created_at;
+              const tb = b.last_message?.created_at ?? b.created_at;
+              return tb.localeCompare(ta);
+            }),
+        );
+      }
     }
   }, []);
 
-  /** Turn Focus Mode off (manual end). Clears the end time + session id. */
+  /** Turn Focus Mode off (manual end). Clears the end time + session id.
+   *  Optimistic, same pattern as startFocusMode. */
   const stopFocusMode = useCallback(async () => {
     const current = appUserRef.current;
     if (!current) return;
+    const next: AppUser = {
+      ...current,
+      is_focus_mode_active: false,
+      focus_end_time: null,
+      focus_session_id: null,
+      updated_at: new Date().toISOString(),
+    };
+    appUserRef.current = next;
+    setAppUser(next);
     const { error: err } = await supabase
       .from('app_user')
       .update({
@@ -249,6 +316,59 @@ export function useChat() {
       .eq('id', current.id);
     if (err) {
       setError(err.message);
+      appUserRef.current = current;
+      setAppUser(current);
+    }
+  }, []);
+
+  /** Upload an image from the user's computer and set it as the chat background. */
+  const setChatBackground = useCallback(async (file: File) => {
+    const current = appUserRef.current;
+    if (!current) return;
+    setError(null);
+    const ext = file.name.split('.').pop();
+    const path = `backgrounds/${current.id}-${Date.now()}${ext ? '.' + ext : ''}`;
+    const { error: upErr } = await supabase.storage
+      .from(MEDIA_BUCKET)
+      .upload(path, file, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: file.type || undefined,
+      });
+    if (upErr) {
+      setError(upErr.message);
+      return;
+    }
+    const url = publicUrl(path);
+    const next: AppUser = { ...current, chat_background_url: url };
+    appUserRef.current = next;
+    setAppUser(next);
+    const { error: err } = await supabase
+      .from('app_user')
+      .update({ chat_background_url: url, updated_at: new Date().toISOString() })
+      .eq('id', current.id);
+    if (err) {
+      setError(err.message);
+      appUserRef.current = current;
+      setAppUser(current);
+    }
+  }, []);
+
+  /** Remove the custom chat background and revert to the default look. */
+  const clearChatBackground = useCallback(async () => {
+    const current = appUserRef.current;
+    if (!current || !current.chat_background_url) return;
+    const next: AppUser = { ...current, chat_background_url: null };
+    appUserRef.current = next;
+    setAppUser(next);
+    const { error: err } = await supabase
+      .from('app_user')
+      .update({ chat_background_url: null, updated_at: new Date().toISOString() })
+      .eq('id', current.id);
+    if (err) {
+      setError(err.message);
+      appUserRef.current = current;
+      setAppUser(current);
     }
   }, []);
 
@@ -369,6 +489,26 @@ export function useChat() {
     };
   }, [maybeSendFocusAutoReply]);
 
+  /** Shared media (images + videos) sent in a conversation, newest first.
+   *  Used by the contact profile panel. */
+  const loadSharedMedia = useCallback(async (contactId: string) => {
+    const { data, error: err } = await supabase
+      .from('messages')
+      .select('id, attachment_type, attachment_url, attachment_name, created_at')
+      .eq('contact_id', contactId)
+      .in('attachment_type', ['image', 'video'])
+      .not('attachment_url', 'is', null)
+      .order('created_at', { ascending: false });
+    if (err) return [];
+    return (data ?? []) as Array<{
+      id: string;
+      attachment_type: string;
+      attachment_url: string;
+      attachment_name: string | null;
+      created_at: string;
+    }>;
+  }, []);
+
   const dismissError = useCallback(() => setError(null), []);
 
   return {
@@ -388,5 +528,8 @@ export function useChat() {
     refreshConversations,
     startFocusMode,
     stopFocusMode,
+    setChatBackground,
+    clearChatBackground,
+    loadSharedMedia,
   };
 }

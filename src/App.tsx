@@ -38,6 +38,9 @@ export default function App() {
     sendMedia,
     startFocusMode,
     stopFocusMode,
+    setChatBackground,
+    clearChatBackground,
+    loadSharedMedia,
   } = useChat();
 
   // On mobile, toggle between the sidebar and the chat view.
@@ -96,6 +99,10 @@ export default function App() {
             focusMinutesRemaining={focusMinutesRemaining}
             onStartFocus={startFocusMode}
             onStopFocus={stopFocusMode}
+            chatBackgroundUrl={appUser?.chat_background_url ?? null}
+            onSetBackground={setChatBackground}
+            onClearBackground={clearChatBackground}
+            onLoadMedia={loadSharedMedia}
           />
         ) : (
           <EmptyState />
