@@ -1,4 +1,4 @@
-import { Loader2, Search, MessageSquare } from 'lucide-react';
+import { Focus, Loader2, Search, MessageSquare } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Avatar } from '@/components/Avatar';
 import { avatarTheme, formatRelative } from '@/lib/format';
@@ -9,6 +9,8 @@ interface SidebarProps {
   loading: boolean;
   selectedId: string | null;
   onSelect: (contact: Conversation) => void;
+  focusActive: boolean;
+  focusMinutesRemaining: number;
 }
 
 function lastMessagePreview(convo: Conversation): string {
@@ -27,6 +29,8 @@ export function Sidebar({
   loading,
   selectedId,
   onSelect,
+  focusActive,
+  focusMinutesRemaining,
 }: SidebarProps) {
   const [query, setQuery] = useState('');
 
@@ -47,6 +51,12 @@ export function Sidebar({
           <h1 className="text-[15px] font-semibold text-slate-100">Pulse</h1>
           <p className="text-xs text-slate-500">Messages</p>
         </div>
+        {focusActive && (
+          <div className="ml-auto flex items-center gap-1.5 rounded-full border border-purple-400/30 bg-purple-500/15 px-2.5 py-1 text-[11px] font-semibold text-purple-300">
+            <Focus className="h-3 w-3" />
+            <span className="tabular-nums">{focusMinutesRemaining}m left</span>
+          </div>
+        )}
       </div>
 
       {/* Search */}

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MEDIA_BUCKET, supabase } from '@/lib/supabase';
 import type {
+  AppUser,
   AttachmentType,
   Contact,
   Conversation,
@@ -13,6 +14,13 @@ function publicUrl(path: string): string {
   return data.publicUrl;
 }
 
+/** Minutes remaining until the focus block ends (clamped at 0). */
+export function focusMinutesRemaining(appUser: AppUser | null): number {
+  if (!appUser?.is_focus_mode_active || !appUser.focus_end_time) return 0;
+  const ms = new Date(appUser.focus_end_time).getTime() - Date.now();
+  return Math.max(0, Math.ceil(ms / 60000));
+}
+
 export function useChat() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [conversationsLoading, setConversationsLoading] = useState(true);
@@ -21,10 +29,14 @@ export function useChat() {
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [appUser, setAppUser] = useState<AppUser | null>(null);
 
   // Keep a local copy of the selected contact id in a ref so the realtime
   // subscription below can read it without re-subscribing on every selection.
   const selectedRef = useRef<string | null>(null);
+  // Latest app user snapshot, readable inside the realtime handler without
+  // forcing a re-subscribe on every focus-state change.
+  const appUserRef = useRef<AppUser | null>(null);
 
   const refreshConversations = useCallback(async () => {
     setConversationsLoading(true);
@@ -97,6 +109,7 @@ export function useChat() {
         .insert({
           contact_id: contactId,
           is_from_me: true,
+          is_system: false,
           content: trimmed,
         })
         .select('*')
@@ -151,6 +164,7 @@ export function useChat() {
         .insert({
           contact_id: contactId,
           is_from_me: true,
+          is_system: false,
           content: null,
           attachment_type: kind,
           attachment_url: url,
@@ -179,12 +193,126 @@ export function useChat() {
     [],
   );
 
-  // Initial load of the conversation list.
+  // ---- Focus Mode -----------------------------------------------------------
+
+  /** Load the singleton app user row. */
+  const loadAppUser = useCallback(async () => {
+    const { data, error: err } = await supabase
+      .from('app_user')
+      .select('*')
+      .limit(1)
+      .maybeSingle();
+    if (err) {
+      setError(err.message);
+      return;
+    }
+    if (data) {
+      const u = data as AppUser;
+      appUserRef.current = u;
+      setAppUser(u);
+    }
+  }, []);
+
+  /** Toggle Focus Mode on for a chosen duration (minutes). Generates a fresh
+   *  session id so the auto-reply dedup ledger resets for the new block. */
+  const startFocusMode = useCallback(async (minutes: number) => {
+    const current = appUserRef.current;
+    if (!current) return;
+    const sessionId = `${current.id}-${Date.now()}`;
+    const endTime = new Date(Date.now() + minutes * 60000).toISOString();
+    const { error: err } = await supabase
+      .from('app_user')
+      .update({
+        is_focus_mode_active: true,
+        focus_end_time: endTime,
+        focus_session_id: sessionId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', current.id);
+    if (err) {
+      setError(err.message);
+    }
+  }, []);
+
+  /** Turn Focus Mode off (manual end). Clears the end time + session id. */
+  const stopFocusMode = useCallback(async () => {
+    const current = appUserRef.current;
+    if (!current) return;
+    const { error: err } = await supabase
+      .from('app_user')
+      .update({
+        is_focus_mode_active: false,
+        focus_end_time: null,
+        focus_session_id: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', current.id);
+    if (err) {
+      setError(err.message);
+    }
+  }, []);
+
+  /** Emit a Focus Mode auto-reply for a received message. The database-level
+   *  UNIQUE(focus_session_id, contact_id) constraint is the dedup guarantee:
+   *  the ledger insert is attempted first; only if it succeeds (i.e. this is
+   *  the first reply for this sender in this session) do we insert the system
+   *  message. Concurrent attempts race safely — the loser's insert is rejected. */
+  const maybeSendFocusAutoReply = useCallback(
+    async (incoming: Message) => {
+      const user = appUserRef.current;
+      // Only when focus mode is active, and only for real received messages.
+      if (!user?.is_focus_mode_active || !user.focus_session_id) return;
+      if (incoming.is_from_me || incoming.is_system) return;
+
+      const remaining = focusMinutesRemaining(user);
+      const body = `${user.name} is currently in a deep-work execution block. This focus block ends in ${remaining} minute${remaining === 1 ? '' : 's'}.`;
+
+      // Atomic dedup: insert into the ledger first. The unique constraint makes
+      // this succeed exactly once per (session, sender).
+      const { error: ledgerErr } = await supabase
+        .from('focus_auto_replies')
+        .insert({
+          focus_session_id: user.focus_session_id,
+          contact_id: incoming.contact_id,
+        });
+      if (ledgerErr) {
+        // Duplicate — this sender was already auto-replied this session. Stop.
+        return;
+      }
+      await supabase.from('messages').insert({
+        contact_id: incoming.contact_id,
+        is_from_me: true,
+        is_system: true,
+        content: body,
+      });
+    },
+    [],
+  );
+
+  // Initial load of the conversation list + app user.
   useEffect(() => {
     refreshConversations();
-  }, [refreshConversations]);
+    loadAppUser();
+  }, [refreshConversations, loadAppUser]);
 
-  // Realtime: when a new message lands for the selected contact, append it.
+  // Auto-expire Focus Mode when the timer runs out, and keep the countdown
+  // driving re-renders every second while active.
+  useEffect(() => {
+    if (!appUser?.is_focus_mode_active || !appUser.focus_end_time) return;
+    const endMs = new Date(appUser.focus_end_time).getTime();
+    const tick = () => {
+      if (Date.now() >= endMs) {
+        stopFocusMode();
+      } else {
+        // Force a re-render so the countdown updates without polling the DB.
+        setAppUser((prev) => (prev ? { ...prev } : prev));
+      }
+    };
+    const interval = window.setInterval(tick, 1000);
+    return () => window.clearInterval(interval);
+  }, [appUser?.is_focus_mode_active, appUser?.focus_end_time, stopFocusMode]);
+
+  // Realtime: messages + app_user state changes.
   useEffect(() => {
     const channel = supabase
       .channel('messages-realtime')
@@ -218,6 +346,20 @@ export function useChat() {
                 return tb.localeCompare(ta);
               }),
           );
+          // Auto-reply engine: if a real message arrives while focus is on,
+          // send the system notice (deduped once per sender per session).
+          if (!msg.is_from_me && !msg.is_system) {
+            maybeSendFocusAutoReply(msg);
+          }
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'app_user' },
+        (payload) => {
+          const u = payload.new as AppUser;
+          appUserRef.current = u;
+          setAppUser(u);
         },
       )
       .subscribe();
@@ -225,7 +367,7 @@ export function useChat() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [maybeSendFocusAutoReply]);
 
   const dismissError = useCallback(() => setError(null), []);
 
@@ -237,10 +379,14 @@ export function useChat() {
     messagesLoading,
     sending,
     error,
+    appUser,
+    focusMinutesRemaining: focusMinutesRemaining(appUser),
     dismissError,
     selectContact,
     sendText,
     sendMedia,
     refreshConversations,
+    startFocusMode,
+    stopFocusMode,
   };
 }

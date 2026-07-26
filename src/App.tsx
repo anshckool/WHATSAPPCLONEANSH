@@ -30,10 +30,14 @@ export default function App() {
     messagesLoading,
     sending,
     error,
+    appUser,
+    focusMinutesRemaining,
     dismissError,
     selectContact,
     sendText,
     sendMedia,
+    startFocusMode,
+    stopFocusMode,
   } = useChat();
 
   // On mobile, toggle between the sidebar and the chat view.
@@ -59,6 +63,8 @@ export default function App() {
           loading={conversationsLoading}
           selectedId={selectedContact?.id ?? null}
           onSelect={handleSelect}
+          focusActive={!!appUser?.is_focus_mode_active}
+          focusMinutesRemaining={focusMinutesRemaining}
         />
       </div>
 
@@ -86,6 +92,10 @@ export default function App() {
             sending={sending}
             onSendText={sendText}
             onSendMedia={sendMedia}
+            focusActive={!!appUser?.is_focus_mode_active}
+            focusMinutesRemaining={focusMinutesRemaining}
+            onStartFocus={startFocusMode}
+            onStopFocus={stopFocusMode}
           />
         ) : (
           <EmptyState />

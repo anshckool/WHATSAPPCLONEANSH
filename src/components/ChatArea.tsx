@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Loader2, Phone, Video } from 'lucide-react';
 import { Avatar } from '@/components/Avatar';
+import { FocusModeToggle } from '@/components/FocusModeToggle';
 import { MessageBubble } from '@/components/MessageBubble';
 import { MessageComposer } from '@/components/MessageComposer';
 import { formatDateDivider } from '@/lib/format';
@@ -13,6 +14,10 @@ interface ChatAreaProps {
   sending: boolean;
   onSendText: (text: string) => void;
   onSendMedia: (file: File, kind: AttachmentType) => void;
+  focusActive: boolean;
+  focusMinutesRemaining: number;
+  onStartFocus: (minutes: number) => void;
+  onStopFocus: () => void;
 }
 
 function DateDivider({ label }: { label: string }) {
@@ -32,6 +37,10 @@ export function ChatArea({
   sending,
   onSendText,
   onSendMedia,
+  focusActive,
+  focusMinutesRemaining,
+  onStartFocus,
+  onStopFocus,
 }: ChatAreaProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -55,7 +64,13 @@ export function ChatArea({
             <p className="text-xs text-emerald-400">Active now</p>
           </div>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
+          <FocusModeToggle
+            active={focusActive}
+            minutesRemaining={focusMinutesRemaining}
+            onStart={onStartFocus}
+            onStop={onStopFocus}
+          />
           <button className="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-800 hover:text-slate-200" aria-label="Call">
             <Phone className="h-5 w-5" />
           </button>

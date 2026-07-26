@@ -19,6 +19,7 @@ export interface Message {
   id: string;
   contact_id: string;
   is_from_me: boolean;
+  is_system: boolean;
   content: string | null;
   attachment_type: AttachmentType | null;
   attachment_url: string | null;
@@ -30,4 +31,14 @@ export interface Message {
 /** Contact enriched with its most recent message, used to render the sidebar. */
 export interface Conversation extends Contact {
   last_message: Message | null;
+}
+
+/** Singleton row representing the app user (Ansh) and their Focus Mode state. */
+export interface AppUser {
+  id: string;
+  name: string;
+  is_focus_mode_active: boolean;
+  focus_end_time: string | null;
+  focus_session_id: string | null;
+  updated_at: string;
 }

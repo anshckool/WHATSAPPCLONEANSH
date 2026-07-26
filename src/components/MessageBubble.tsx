@@ -58,6 +58,18 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   const hasAttachment = message.attachment_type !== null;
   const hasText = Boolean(message.content);
 
+  // System auto-reply notices render as a centered pill, not a chat bubble.
+  if (message.is_system) {
+    return (
+      <div className="my-1.5 flex w-full animate-[fadeIn_0.25s_ease-out] justify-center">
+        <div className="flex items-center gap-2 rounded-full border border-purple-400/25 bg-purple-500/10 px-4 py-2 text-center text-[12px] text-purple-200">
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-purple-400" />
+          <span className="whitespace-pre-wrap break-words">{message.content}</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`flex w-full animate-[fadeInUp_0.25s_ease-out] ${
