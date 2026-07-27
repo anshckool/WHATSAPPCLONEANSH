@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { X } from 'lucide-react';
+import { ArrowLeft, X } from 'lucide-react';
+import { AuthModal } from '@/components/AuthModal';
 import { ChatArea } from '@/components/ChatArea';
 import { EmptyState } from '@/components/EmptyState';
 import { Sidebar } from '@/components/Sidebar';
+import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { useChat } from '@/hooks/useChat';
-import { ArrowLeft } from 'lucide-react';
 
 function ErrorToast({ message, onClose }: { message: string; onClose: () => void }) {
   useEffect(() => {
@@ -21,21 +22,25 @@ function ErrorToast({ message, onClose }: { message: string; onClose: () => void
   );
 }
 
-export default function App() {
+function ChatApp() {
+  const { user, loading, signOut } = useAuth();
   const {
+    profiles,
+    profilesLoading,
     conversations,
     conversationsLoading,
-    selectedContact,
+    selectedPartner,
     messages,
     messagesLoading,
     sending,
     error,
-    appUser,
     focusMinutesRemaining,
     dismissError,
-    selectContact,
+    selectPartner,
     sendText,
     sendMedia,
+    sendLocation,
+    updateLiveLocation,
     startFocusMode,
     stopFocusMode,
     setChatBackground,
@@ -43,30 +48,53 @@ export default function App() {
     loadSharedMedia,
   } = useChat();
 
-  // On mobile, toggle between the sidebar and the chat view.
   const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
 
-  const handleSelect = (contact: typeof selectedContact) => {
-    if (contact) {
-      selectContact(contact);
+  // Reset to list view when the signed-in user changes.
+  useEffect(() => {
+    setMobileView('list');
+  }, [user?.id]);
+
+  // Auth gate
+  if (loading) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-slate-950 text-slate-400">
+        <div className="flex items-center gap-2">
+          <span className="text-sm">Loading…</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <AuthModal />;
+  }
+
+  const handleSelect = (partner: typeof selectedPartner) => {
+    if (partner) {
+      selectPartner(partner);
       setMobileView('chat');
     }
   };
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-950 font-sans text-slate-100 antialiased">
-      {/* Sidebar — full width on desktop, toggled on mobile */}
+      {/* Sidebar */}
       <div
         className={`${
           mobileView === 'list' ? 'block' : 'hidden'
         } w-full shrink-0 border-r border-slate-800 md:block md:w-[340px] lg:w-[380px]`}
       >
         <Sidebar
+          me={user}
+          profiles={profiles}
+          profilesLoading={profilesLoading}
           conversations={conversations}
-          loading={conversationsLoading}
-          selectedId={selectedContact?.id ?? null}
+          conversationsLoading={conversationsLoading}
+          selectedId={selectedPartner?.id ?? null}
           onSelect={handleSelect}
-          focusActive={!!appUser?.is_focus_mode_active}
+          onStartNewChat={handleSelect}
+          focusActive={!!user.is_focus_mode_active}
           focusMinutesRemaining={focusMinutesRemaining}
         />
       </div>
@@ -77,8 +105,7 @@ export default function App() {
           mobileView === 'chat' ? 'block' : 'hidden'
         } relative flex-1 md:block`}
       >
-        {/* Back button (mobile only) */}
-        {selectedContact && (
+        {selectedPartner && (
           <button
             onClick={() => setMobileView('list')}
             className="absolute left-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-slate-800 text-slate-200 shadow-sm transition hover:bg-slate-700 md:hidden"
@@ -87,22 +114,26 @@ export default function App() {
             <ArrowLeft className="h-5 w-5" />
           </button>
         )}
-        {selectedContact ? (
+        {selectedPartner ? (
           <ChatArea
-            contact={selectedContact}
+            me={user}
+            partner={selectedPartner}
             messages={messages}
             loading={messagesLoading}
             sending={sending}
             onSendText={sendText}
             onSendMedia={sendMedia}
-            focusActive={!!appUser?.is_focus_mode_active}
+            onSendLocation={sendLocation}
+            onUpdateLiveLocation={updateLiveLocation}
+            focusActive={!!user.is_focus_mode_active}
             focusMinutesRemaining={focusMinutesRemaining}
             onStartFocus={startFocusMode}
             onStopFocus={stopFocusMode}
-            chatBackgroundUrl={appUser?.chat_background_url ?? null}
+            chatBackgroundUrl={user.chat_background_url ?? null}
             onSetBackground={setChatBackground}
             onClearBackground={clearChatBackground}
             onLoadMedia={loadSharedMedia}
+            onSignOut={signOut}
           />
         ) : (
           <EmptyState />
@@ -111,5 +142,13 @@ export default function App() {
 
       {error && <ErrorToast message={error} onClose={dismissError} />}
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <ChatApp />
+    </AuthProvider>
   );
 }
