@@ -141,7 +141,21 @@ export function AuthModal() {
           {err && (
             <div className="flex items-start gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-300">
               <X className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{err}</span>
+              <div className="flex-1">
+                <span>{err}</span>
+                {err.includes('already exists') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTab('signin');
+                      setErr(null);
+                    }}
+                    className="mt-1 block font-semibold text-rose-200 underline-offset-2 hover:underline"
+                  >
+                    Switch to Sign In
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
