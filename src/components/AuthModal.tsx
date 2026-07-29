@@ -155,6 +155,18 @@ export function AuthModal() {
                     Switch to Sign In
                   </button>
                 )}
+                {err.includes('Wrong email or password') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTab('signup');
+                      setErr(null);
+                    }}
+                    className="mt-1 block font-semibold text-rose-200 underline-offset-2 hover:underline"
+                  >
+                    Create a new account
+                  </button>
+                )}
               </div>
             </div>
           )}

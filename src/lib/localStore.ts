@@ -112,6 +112,34 @@ export const localStore = {
     return publicProfile;
   },
 
+  /** Force-create or overwrite a local account. Used as a recovery path
+   *  when Supabase says "already registered" but the user can't sign in
+   *  (password mismatch). This breaks the auth loop by letting the user
+   *  set a fresh password via the sign-up form. */
+  upsert(name: string, email: string, password: string, avatarColor: AvatarColor): LocalProfile {
+    const users = readUsers();
+    const idx = users.findIndex((u) => u.email.toLowerCase() === email.toLowerCase());
+    const user: LocalProfile = {
+      id: idx !== -1 ? users[idx].id : makeId(),
+      name,
+      email,
+      password,
+      avatar_color: avatarColor,
+      is_focus_mode_active: false,
+      focus_end_time: null,
+      focus_session_id: null,
+      chat_background_url: null,
+      created_at: idx !== -1 ? users[idx].created_at : new Date().toISOString(),
+    };
+    if (idx !== -1) users[idx] = user;
+    else users.push(user);
+    writeUsers(users);
+    const { password: _pw, ...publicProfile } = user;
+    void _pw;
+    localStorage.setItem(SESSION_KEY, JSON.stringify(publicProfile));
+    return user;
+  },
+
   /** A custom event fired whenever local profiles/users change, so open tabs
    *  can refresh their sidebar user lists. */
   notifyProfilesChanged(): void {

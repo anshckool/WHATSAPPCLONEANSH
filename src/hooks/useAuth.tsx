@@ -45,6 +45,18 @@ function isAlreadyRegistered(message: string): boolean {
   return m.includes('already') || m.includes('has been taken') || m.includes('user already');
 }
 
+/** True when the error indicates the credentials are wrong / user not found. */
+function isInvalidCredentials(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    m.includes('invalid') ||
+    m.includes('incorrect') ||
+    m.includes('not found') ||
+    m.includes('bad password') ||
+    m.includes('invalid login')
+  );
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -66,9 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const detected = 'supabase';
-      if (cancelled) return;
-      setMode(detected);
+      setMode('supabase');
 
       try {
         const { data } = await supabase.auth.getSession();
@@ -123,13 +133,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
 
           if (error) {
-            // "Already registered" is a legitimate error — don't fall back,
-            // tell the user to sign in instead.
+            // "Already registered" on Supabase. Instead of trapping the user,
+            // fall back to local mode and force-overwrite the local account
+            // with the password they just typed. This breaks the auth loop:
+            // even if the Supabase password is wrong/corrupted, the user can
+            // now sign in locally with the credentials they just entered.
             if (isAlreadyRegistered(error.message)) {
-              throw new Error('An account with this email already exists. Try signing in instead.');
+              setMode('local');
+              localStore.upsert(name, email, password, avatarColor);
+              localStore.notifyProfilesChanged();
+              setUser(localStore.getSession());
+              return;
             }
-            // Network/transport error → fall back to local mode so sign-up
-            // always works.
+            // Network/transport error → fall back to local mode.
             if (isNetworkError(error.message)) {
               setMode('local');
               localStore.signUp(name, email, password, avatarColor);
@@ -137,7 +153,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               setUser(localStore.getSession());
               return;
             }
-            // Any other Supabase error → throw it (rate limit, weak password, etc.)
+            // Any other Supabase error → throw it (rate limit, weak password).
             throw error;
           }
 
@@ -168,7 +184,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 return;
               }
             }
-            // signIn failed — fall back to local so the user can still use the app.
           }
 
           // Ultimate fallback: local mode.
@@ -177,13 +192,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           localStore.notifyProfilesChanged();
           setUser(localStore.getSession());
         } catch (e) {
-          // If this is our own thrown error (already registered), re-throw.
-          if (e instanceof Error && isAlreadyRegistered(e.message)) throw e;
           // Network/transport exception → fall back to local mode.
-          setMode('local');
-          localStore.signUp(name, email, password, avatarColor);
-          localStore.notifyProfilesChanged();
-          setUser(localStore.getSession());
+          if (e instanceof Error && isNetworkError(e.message)) {
+            setMode('local');
+            localStore.signUp(name, email, password, avatarColor);
+            localStore.notifyProfilesChanged();
+            setUser(localStore.getSession());
+            return;
+          }
+          // Re-throw genuine validation errors (weak password, etc.).
+          throw e;
         }
       } else {
         localStore.signUp(name, email, password, avatarColor);
@@ -197,37 +215,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = useCallback(
     async (email: string, password: string) => {
       if (mode === 'supabase') {
+        let supabaseFailed = false;
+        let supabaseErr: string | null = null;
         try {
           const { data, error } = await supabase.auth.signInWithPassword({ email, password });
           if (error) {
-            // Network/transport error → fall back to local mode.
+            supabaseFailed = true;
+            supabaseErr = error.message;
+            // Network/transport error → fall back to local mode immediately.
             if (isNetworkError(error.message)) {
               setMode('local');
               localStore.signIn(email, password);
               setUser(localStore.getSession());
               return;
             }
-            // Credential error (wrong password, user not found) → throw it.
-            throw error;
-          }
-          if (data.user) {
+            // Credential error (wrong password, user not found). Don't throw
+            // yet — try local mode first so users who registered via the
+            // local fallback can still sign in.
+          } else if (data.user) {
             const profile = await loadSupabaseProfile(data.user.id);
             if (profile) {
               setUser(profile);
               return;
             }
+            supabaseFailed = true;
           }
-          // No profile found — fall back to local.
-          setMode('local');
-          localStore.signIn(email, password);
-          setUser(localStore.getSession());
         } catch (e) {
-          // Re-throw credential errors (our own throws or Supabase auth errors).
-          if (e instanceof Error && !isNetworkError(e.message)) throw e;
-          // Network exception → fall back to local mode.
-          setMode('local');
-          localStore.signIn(email, password);
-          setUser(localStore.getSession());
+          supabaseFailed = true;
+          supabaseErr = e instanceof Error ? e.message : 'Sign in failed.';
+          if (e instanceof Error && isNetworkError(e.message)) {
+            setMode('local');
+            localStore.signIn(email, password);
+            setUser(localStore.getSession());
+            return;
+          }
+        }
+
+        // Supabase sign-in didn't produce a profile. Try local mode — the user
+        // may have registered through the local fallback, or their local
+        // password differs from the (possibly corrupted) Supabase one.
+        if (supabaseFailed) {
+          try {
+            setMode('local');
+            localStore.signIn(email, password);
+            setUser(localStore.getSession());
+            return;
+          } catch {
+            // Local sign-in also failed — restore mode and surface the
+            // original Supabase error so the user knows what went wrong.
+            setMode('supabase');
+            throw new Error(
+              supabaseErr && isInvalidCredentials(supabaseErr)
+                ? 'Wrong email or password. Double-check your credentials, or create a new account.'
+                : supabaseErr ?? 'Sign in failed. Please try again.',
+            );
+          }
         }
       } else {
         localStore.signIn(email, password);
