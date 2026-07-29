@@ -4,6 +4,7 @@ import { localStore } from '@/lib/localStore';
 import { useAuth } from '@/hooks/useAuth';
 import type {
   AvatarColor,
+  ContactEntry,
   Conversation,
   Message,
   MediaType,
@@ -34,6 +35,8 @@ export function useChat() {
 
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [profilesLoading, setProfilesLoading] = useState(true);
+  const [contacts, setContacts] = useState<ContactEntry[]>([]);
+  const [contactsLoading, setContactsLoading] = useState(true);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [conversationsLoading, setConversationsLoading] = useState(true);
   const [selectedPartner, setSelectedPartner] = useState<Profile | null>(null);
@@ -75,6 +78,135 @@ export function useChat() {
     }
     setProfilesLoading(false);
   }, [user, isSupabase]);
+
+  // ---- Contacts (the user's saved contact list) ---------------------------
+
+  const refreshContacts = useCallback(async () => {
+    if (!user) return;
+    setContactsLoading(true);
+    if (isSupabase) {
+      // Fetch my contacts, then resolve each to a profile by email.
+      const { data: rows, error: err } = await supabase
+        .from('contacts')
+        .select('*')
+        .eq('owner_id', user.id)
+        .order('created_at', { ascending: true });
+      if (err) {
+        setError(err.message);
+        setContactsLoading(false);
+        return;
+      }
+      const contactRows = (rows ?? []) as Array<{
+        id: string;
+        owner_id: string;
+        contact_profile_id: string | null;
+        contact_email: string;
+        contact_name: string | null;
+        created_at: string;
+      }>;
+      // Resolve each contact_email to a profile.
+      const emails = contactRows.map((r) => r.contact_email).filter(Boolean);
+      let profileMap: Map<string, Profile> = new Map();
+      if (emails.length > 0) {
+        const { data: profRows } = await supabase
+          .from('profiles')
+          .select('*')
+          .in('email', emails);
+        if (profRows) {
+          profileMap = new Map(
+            (profRows as Profile[]).map((p) => [p.email ?? '', p]),
+          );
+        }
+      }
+      const enriched: ContactEntry[] = contactRows.map((r) => ({
+        ...r,
+        profile: profileMap.get(r.contact_email) ?? null,
+      }));
+      setContacts(enriched);
+    } else {
+      // Local mode: contacts stored in localStorage alongside profiles.
+      const local = localStore.listProfiles().filter((p) => p.id !== user.id);
+      const entries: ContactEntry[] = local.map((p) => ({
+        id: 'local-contact-' + p.id,
+        owner_id: user.id,
+        contact_profile_id: p.id,
+        contact_email: (p as unknown as { email?: string }).email ?? '',
+        contact_name: null,
+        created_at: p.created_at,
+        profile: p,
+      }));
+      setContacts(entries);
+    }
+    setContactsLoading(false);
+  }, [user, isSupabase]);
+
+  /** Add a contact by email. If the person has registered, links to their profile. */
+  const addContactByEmail = useCallback(
+    async (email: string): Promise<{ ok: boolean; error?: string }> => {
+      const me = userRef.current;
+      if (!me) return { ok: false, error: 'Not signed in.' };
+      const cleanEmail = email.trim().toLowerCase();
+      if (!cleanEmail || !cleanEmail.includes('@')) {
+        return { ok: false, error: 'Please enter a valid email address.' };
+      }
+      if (cleanEmail === (me.email ?? '').toLowerCase()) {
+        return { ok: false, error: 'You cannot add yourself as a contact.' };
+      }
+      if (contacts.some((c) => c.contact_email.toLowerCase() === cleanEmail)) {
+        return { ok: false, error: 'This contact is already in your list.' };
+      }
+      if (isSupabase) {
+        // Look up the profile by email.
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('email', cleanEmail)
+          .maybeSingle();
+        const profile = prof as Profile | null;
+        const { error: insertErr } = await supabase.from('contacts').insert({
+          owner_id: me.id,
+          contact_profile_id: profile?.id ?? null,
+          contact_email: cleanEmail,
+          contact_name: profile?.name ?? null,
+        });
+        if (insertErr) {
+          return { ok: false, error: insertErr.message };
+        }
+      } else {
+        // Local mode: check if a local user with this email exists.
+        const allLocal = localStore.listProfiles();
+        const found = allLocal.find(
+          (p) => (p as unknown as { email?: string }).email?.toLowerCase() === cleanEmail,
+        );
+        if (!found) {
+          return {
+            ok: false,
+            error: 'No registered user found with this email. Ask them to sign up first!',
+          };
+        }
+      }
+      await refreshContacts();
+      return { ok: true };
+    },
+    [contacts, isSupabase, refreshContacts],
+  );
+
+  /** Remove a contact from the user's list. */
+  const removeContact = useCallback(
+    async (contactId: string) => {
+      if (!isSupabase) return;
+      const { error: err } = await supabase
+        .from('contacts')
+        .delete()
+        .eq('id', contactId);
+      if (err) {
+        setError(err.message);
+        return;
+      }
+      await refreshContacts();
+    },
+    [isSupabase, refreshContacts],
+  );
 
   // ---- Conversations (sidebar: last message per partner) -------------------
 
@@ -520,8 +652,9 @@ export function useChat() {
   useEffect(() => {
     if (!user) return;
     refreshProfiles();
+    refreshContacts();
     refreshConversations();
-  }, [user, refreshProfiles, refreshConversations]);
+  }, [user, refreshProfiles, refreshContacts, refreshConversations]);
 
   // Auto-expire focus mode when the timer ends.
   useEffect(() => {
@@ -583,6 +716,13 @@ export function useChat() {
       )
       .on(
         'postgres_changes',
+        { event: '*', schema: 'public', table: 'contacts' },
+        () => {
+          refreshContacts();
+        },
+      )
+      .on(
+        'postgres_changes',
         { event: '*', schema: 'public', table: 'profiles' },
         () => {
           refreshProfiles();
@@ -593,7 +733,7 @@ export function useChat() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [isSupabase, user, refreshProfiles, refreshConversations, bumpConversation, maybeSendFocusAutoReply]);
+  }, [isSupabase, user, refreshProfiles, refreshContacts, refreshConversations, bumpConversation, maybeSendFocusAutoReply]);
 
   // Local mode: listen for cross-tab profile changes.
   useEffect(() => {
@@ -613,6 +753,8 @@ export function useChat() {
     user,
     profiles,
     profilesLoading,
+    contacts,
+    contactsLoading,
     conversations,
     conversationsLoading,
     selectedPartner,
@@ -634,5 +776,8 @@ export function useChat() {
     setChatBackground,
     clearChatBackground,
     loadSharedMedia,
+    addContactByEmail,
+    removeContact,
+    refreshContacts,
   };
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Info, Loader2, LogOut, Phone, Video } from 'lucide-react';
+import { Info, Loader2, Phone, Video } from 'lucide-react';
 import { Avatar } from '@/components/Avatar';
 import { ContactProfile } from '@/components/ContactProfile';
 import type { SharedMediaItem } from '@/components/ContactProfile';
@@ -28,7 +28,6 @@ interface ChatAreaProps {
   onSetBackground: (file: File) => void;
   onClearBackground: () => void;
   onLoadMedia: (contactId: string) => Promise<SharedMediaItem[]>;
-  onSignOut: () => void;
 }
 
 function DateDivider({ label }: { label: string }) {
@@ -59,7 +58,6 @@ export function ChatArea({
   onSetBackground,
   onClearBackground,
   onLoadMedia,
-  onSignOut,
 }: ChatAreaProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -137,15 +135,6 @@ export function ChatArea({
             aria-label="Video call"
           >
             <Video className="h-5 w-5" />
-          </button>
-          <button
-            type="button"
-            onClick={onSignOut}
-            className="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 transition hover:bg-rose-500/10 hover:text-rose-400"
-            aria-label="Sign out"
-            title="Sign out"
-          >
-            <LogOut className="h-5 w-5" />
           </button>
         </div>
       </header>

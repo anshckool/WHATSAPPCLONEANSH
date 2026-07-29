@@ -101,7 +101,7 @@ export const localStore = {
     const users = readUsers();
     const idx = users.findIndex((u) => u.id === id);
     if (idx === -1) return null;
-    users[idx] = { ...users[idx], ...patch };
+    users[idx] = { ...users[idx], ...patch } as LocalProfile;
     writeUsers(users);
     const { password: _pw, ...publicProfile } = users[idx];
     void _pw;

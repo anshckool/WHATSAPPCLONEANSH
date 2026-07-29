@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, X } from 'lucide-react';
+import { AddContactModal } from '@/components/AddContactModal';
 import { AuthModal } from '@/components/AuthModal';
 import { ChatArea } from '@/components/ChatArea';
 import { EmptyState } from '@/components/EmptyState';
@@ -25,8 +26,8 @@ function ErrorToast({ message, onClose }: { message: string; onClose: () => void
 function ChatApp() {
   const { user, loading, signOut } = useAuth();
   const {
-    profiles,
-    profilesLoading,
+    contacts,
+    contactsLoading,
     conversations,
     conversationsLoading,
     selectedPartner,
@@ -46,16 +47,17 @@ function ChatApp() {
     setChatBackground,
     clearChatBackground,
     loadSharedMedia,
+    addContactByEmail,
+    removeContact,
   } = useChat();
 
   const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
+  const [addContactOpen, setAddContactOpen] = useState(false);
 
-  // Reset to list view when the signed-in user changes.
   useEffect(() => {
     setMobileView('list');
   }, [user?.id]);
 
-  // Auth gate
   if (loading) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-slate-950 text-slate-400">
@@ -87,13 +89,15 @@ function ChatApp() {
       >
         <Sidebar
           me={user}
-          profiles={profiles}
-          profilesLoading={profilesLoading}
+          contacts={contacts}
+          contactsLoading={contactsLoading}
           conversations={conversations}
           conversationsLoading={conversationsLoading}
           selectedId={selectedPartner?.id ?? null}
           onSelect={handleSelect}
-          onStartNewChat={handleSelect}
+          onAddContact={() => setAddContactOpen(true)}
+          onRemoveContact={removeContact}
+          onSignOut={signOut}
           focusActive={!!user.is_focus_mode_active}
           focusMinutesRemaining={focusMinutesRemaining}
         />
@@ -133,12 +137,18 @@ function ChatApp() {
             onSetBackground={setChatBackground}
             onClearBackground={clearChatBackground}
             onLoadMedia={loadSharedMedia}
-            onSignOut={signOut}
           />
         ) : (
           <EmptyState />
         )}
       </div>
+
+      {/* Add contact modal */}
+      <AddContactModal
+        open={addContactOpen}
+        onClose={() => setAddContactOpen(false)}
+        onAdd={addContactByEmail}
+      />
 
       {error && <ErrorToast message={error} onClose={dismissError} />}
     </div>
