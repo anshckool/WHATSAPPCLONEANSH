@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, X } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, X } from 'lucide-react';
 import { AddContactModal } from '@/components/AddContactModal';
 import { AuthModal } from '@/components/AuthModal';
 import { ChatArea } from '@/components/ChatArea';
@@ -21,6 +21,30 @@ function ErrorToast({ message, onClose }: { message: string; onClose: () => void
       </button>
     </div>
   );
+}
+
+function InviteToast({ message, onClose }: { message: string; onClose: () => void }) {
+  return (
+    <div className="fixed bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-xl bg-emerald-600 px-4 py-3 text-sm text-white shadow-xl animate-[fadeInUp_0.2s_ease-out]">
+      <CheckCircle2 className="h-4 w-4" />
+      <span>{message}</span>
+      <button onClick={onClose} className="opacity-70 transition hover:opacity-100" aria-label="Dismiss">
+        <X className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
+function getInviteEmailFromUrl(): string | null {
+  const params = new URLSearchParams(window.location.search);
+  const invite = params.get('invite');
+  return invite ? decodeURIComponent(invite) : null;
+}
+
+function clearInviteFromUrl() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete('invite');
+  window.history.replaceState({}, '', url.toString());
 }
 
 function ChatApp() {
@@ -49,14 +73,40 @@ function ChatApp() {
     loadSharedMedia,
     addContactByEmail,
     removeContact,
+    acceptInvite,
   } = useChat();
 
   const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
   const [addContactOpen, setAddContactOpen] = useState(false);
+  const [inviteToast, setInviteToast] = useState<string | null>(null);
+  const [inviteProcessing, setInviteProcessing] = useState(false);
 
   useEffect(() => {
     setMobileView('list');
   }, [user?.id]);
+
+  // Process invite link once the user is signed in.
+  useEffect(() => {
+    if (!user || inviteProcessing) return;
+    const inviteEmail = getInviteEmailFromUrl();
+    if (!inviteEmail) return;
+
+    setInviteProcessing(true);
+    (async () => {
+      const result = await acceptInvite(inviteEmail);
+      if (result.ok) {
+        if (result.partner) {
+          setInviteToast(`Connected with ${result.partner.name}! You can start chatting now.`);
+        } else {
+          setInviteToast("Contact added! They'll appear in your list once they register.");
+        }
+      } else {
+        setInviteToast(result.error ?? 'Could not process the invite link.');
+      }
+      clearInviteFromUrl();
+      setInviteProcessing(false);
+    })();
+  }, [user, inviteProcessing, acceptInvite]);
 
   if (loading) {
     return (
@@ -148,9 +198,13 @@ function ChatApp() {
         open={addContactOpen}
         onClose={() => setAddContactOpen(false)}
         onAdd={addContactByEmail}
+        myEmail={user.email}
       />
 
       {error && <ErrorToast message={error} onClose={dismissError} />}
+      {inviteToast && (
+        <InviteToast message={inviteToast} onClose={() => setInviteToast(null)} />
+      )}
     </div>
   );
 }

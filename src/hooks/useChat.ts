@@ -747,6 +747,50 @@ export function useChat() {
     };
   }, [isSupabase, user, refreshProfiles]);
 
+  /** Accept an invite link. Calls the accept-invite edge function which
+   *  creates mutual contacts (me → them AND them → me). Returns the partner
+   *  profile if they're registered, so the caller can open the chat. */
+  const acceptInvite = useCallback(
+    async (inviteEmail: string): Promise<{ ok: boolean; error?: string; partner?: Profile }> => {
+      const me = userRef.current;
+      if (!me) return { ok: false, error: 'Not signed in.' };
+      const cleanEmail = inviteEmail.trim().toLowerCase();
+      if (!cleanEmail || !cleanEmail.includes('@')) {
+        return { ok: false, error: 'Invalid invite link.' };
+      }
+      if (cleanEmail === (me.email ?? '').toLowerCase()) {
+        return { ok: false, error: 'This is your own invite link.' };
+      }
+      if (isSupabase) {
+        const { data: session } = await supabase.auth.getSession();
+        const token = session.session?.access_token;
+        if (!token) return { ok: false, error: 'Session expired. Please sign in again.' };
+
+        const res = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/accept-invite`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ inviteEmail: cleanEmail }),
+          },
+        );
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          return { ok: false, error: (json as { error?: string }).error ?? 'Failed to accept invite.' };
+        }
+        await refreshContacts();
+        const partner = (json as { partner?: Profile }).partner ?? undefined;
+        return { ok: true, partner };
+      }
+      // Local mode: just add them to the contact list if they exist.
+      return addContactByEmail(cleanEmail);
+    },
+    [isSupabase, refreshContacts, addContactByEmail],
+  );
+
   const dismissError = useCallback(() => setError(null), []);
 
   return {
@@ -779,5 +823,6 @@ export function useChat() {
     addContactByEmail,
     removeContact,
     refreshContacts,
+    acceptInvite,
   };
 }
