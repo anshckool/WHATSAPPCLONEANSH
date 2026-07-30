@@ -83,6 +83,8 @@ Deno.serve(async (req: Request) => {
         contact_profile_id: targetId,
         contact_email: targetEmail,
         contact_name: targetProfile?.name ?? null,
+        username: targetEmail,
+        avatar_color: targetProfile?.avatar_color ?? "blue",
       });
       if (e1) results.push(`my-contact: ${e1.message}`);
       else results.push("my-contact: created");
@@ -105,6 +107,8 @@ Deno.serve(async (req: Request) => {
           contact_profile_id: myId,
           contact_email: myEmail.toLowerCase(),
           contact_name: myProfile.name ?? null,
+          username: myEmail.toLowerCase(),
+          avatar_color: myProfile.avatar_color ?? "blue",
         });
         if (e2) results.push("their-contact: " + e2.message);
         else results.push("their-contact: created");

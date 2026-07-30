@@ -168,6 +168,11 @@ export function useChat() {
           contact_profile_id: profile?.id ?? null,
           contact_email: cleanEmail,
           contact_name: profile?.name ?? null,
+          // Legacy column from the original single-tenant schema. Still NOT NULL
+          // is dropped in the migration, but populate it so the row is valid
+          // regardless of migration timing.
+          username: cleanEmail,
+          avatar_color: profile?.avatar_color ?? 'blue',
         });
         if (insertErr) {
           return { ok: false, error: insertErr.message };
