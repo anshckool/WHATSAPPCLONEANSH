@@ -25,6 +25,7 @@ export interface Profile {
   id: string;
   name: string;
   email: string | null;
+  phone: string | null;
   avatar_color: AvatarColor;
   is_focus_mode_active: boolean;
   focus_end_time: string | null;
@@ -62,7 +63,8 @@ export interface ContactEntry {
   id: string;
   owner_id: string;
   contact_profile_id: string | null;
-  contact_email: string;
+  contact_email: string | null;
+  contact_phone: string | null;
   contact_name: string | null;
   created_at: string;
   /** Resolved profile if the contact has registered, else null. */

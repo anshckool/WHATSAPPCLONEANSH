@@ -17,7 +17,7 @@ interface AuthContextValue {
   user: Profile | null;
   loading: boolean;
   mode: AuthMode;
-  signUp: (name: string, email: string, password: string, avatarColor: AvatarColor) => Promise<void>;
+  signUp: (name: string, email: string, password: string, avatarColor: AvatarColor, phone?: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -123,13 +123,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [mode, loadSupabaseProfile]);
 
   const signUp = useCallback(
-    async (name: string, email: string, password: string, avatarColor: AvatarColor) => {
+    async (name: string, email: string, password: string, avatarColor: AvatarColor, phone?: string) => {
       if (mode === 'supabase') {
         try {
           const { data, error } = await supabase.auth.signUp({
             email,
             password,
-            options: { data: { name, avatar_color: avatarColor } },
+            options: { data: { name, avatar_color: avatarColor, phone: phone || undefined } },
           });
 
           if (error) {
@@ -140,7 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // now sign in locally with the credentials they just entered.
             if (isAlreadyRegistered(error.message)) {
               setMode('local');
-              localStore.upsert(name, email, password, avatarColor);
+              localStore.upsert(name, email, password, avatarColor, phone);
               localStore.notifyProfilesChanged();
               setUser(localStore.getSession());
               return;
@@ -148,7 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // Network/transport error → fall back to local mode.
             if (isNetworkError(error.message)) {
               setMode('local');
-              localStore.signUp(name, email, password, avatarColor);
+              localStore.signUp(name, email, password, avatarColor, phone);
               localStore.notifyProfilesChanged();
               setUser(localStore.getSession());
               return;
@@ -188,14 +188,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
           // Ultimate fallback: local mode.
           setMode('local');
-          localStore.signUp(name, email, password, avatarColor);
+          localStore.signUp(name, email, password, avatarColor, phone);
           localStore.notifyProfilesChanged();
           setUser(localStore.getSession());
         } catch (e) {
           // Network/transport exception → fall back to local mode.
           if (e instanceof Error && isNetworkError(e.message)) {
             setMode('local');
-            localStore.signUp(name, email, password, avatarColor);
+            localStore.signUp(name, email, password, avatarColor, phone);
             localStore.notifyProfilesChanged();
             setUser(localStore.getSession());
             return;
@@ -204,7 +204,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           throw e;
         }
       } else {
-        localStore.signUp(name, email, password, avatarColor);
+        localStore.signUp(name, email, password, avatarColor, phone);
         localStore.notifyProfilesChanged();
         setUser(localStore.getSession());
       }

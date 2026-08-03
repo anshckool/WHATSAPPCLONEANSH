@@ -100,12 +100,14 @@ export function useChat() {
         id: string;
         owner_id: string;
         contact_profile_id: string | null;
-        contact_email: string;
+        contact_email: string | null;
+        contact_phone: string | null;
         contact_name: string | null;
         created_at: string;
       }>;
-      // Resolve each contact_email to a profile.
-      const emails = contactRows.map((r) => r.contact_email).filter(Boolean);
+      // Resolve each contact_email / contact_phone to a profile.
+      const emails = contactRows.map((r) => r.contact_email).filter(Boolean) as string[];
+      const phones = contactRows.map((r) => r.contact_phone).filter(Boolean) as string[];
       let profileMap: Map<string, Profile> = new Map();
       if (emails.length > 0) {
         const { data: profRows } = await supabase
@@ -118,9 +120,23 @@ export function useChat() {
           );
         }
       }
+      if (phones.length > 0) {
+        const { data: profRows } = await supabase
+          .from('profiles')
+          .select('*')
+          .in('phone', phones);
+        if (profRows) {
+          for (const p of profRows as Profile[]) {
+            profileMap.set('__phone__' + (p.phone ?? ''), p);
+          }
+        }
+      }
       const enriched: ContactEntry[] = contactRows.map((r) => ({
         ...r,
-        profile: profileMap.get(r.contact_email) ?? null,
+        profile:
+          (r.contact_email && profileMap.get(r.contact_email)) ||
+          (r.contact_phone && profileMap.get('__phone__' + r.contact_phone)) ||
+          null,
       }));
       setContacts(enriched);
     } else {
@@ -130,7 +146,8 @@ export function useChat() {
         id: 'local-contact-' + p.id,
         owner_id: user.id,
         contact_profile_id: p.id,
-        contact_email: (p as unknown as { email?: string }).email ?? '',
+        contact_email: (p as unknown as { email?: string }).email ?? null,
+        contact_phone: (p as unknown as { phone?: string }).phone ?? null,
         contact_name: null,
         created_at: p.created_at,
         profile: p,
@@ -152,7 +169,7 @@ export function useChat() {
       if (cleanEmail === (me.email ?? '').toLowerCase()) {
         return { ok: false, error: 'You cannot add yourself as a contact.' };
       }
-      if (contacts.some((c) => c.contact_email.toLowerCase() === cleanEmail)) {
+      if (contacts.some((c) => c.contact_email?.toLowerCase() === cleanEmail)) {
         return { ok: false, error: 'This contact is already in your list.' };
       }
       if (isSupabase) {
@@ -168,10 +185,7 @@ export function useChat() {
           contact_profile_id: profile?.id ?? null,
           contact_email: cleanEmail,
           contact_name: profile?.name ?? null,
-          // Legacy column from the original single-tenant schema. Still NOT NULL
-          // is dropped in the migration, but populate it so the row is valid
-          // regardless of migration timing.
-          username: cleanEmail,
+          username: null,
           avatar_color: profile?.avatar_color ?? 'blue',
         });
         if (insertErr) {
@@ -187,6 +201,55 @@ export function useChat() {
           return {
             ok: false,
             error: 'No registered user found with this email. Ask them to sign up first!',
+          };
+        }
+      }
+      await refreshContacts();
+      return { ok: true };
+    },
+    [contacts, isSupabase, refreshContacts],
+  );
+
+  /** Add a contact by phone number. If the person has registered, links to their profile. */
+  const addContactByPhone = useCallback(
+    async (phone: string): Promise<{ ok: boolean; error?: string }> => {
+      const me = userRef.current;
+      if (!me) return { ok: false, error: 'Not signed in.' };
+      const cleanPhone = phone.trim().toLowerCase().replace(/\s/g, '');
+      if (!cleanPhone || cleanPhone.length < 7) {
+        return { ok: false, error: 'Enter a valid phone number.' };
+      }
+      if (contacts.some((c) => c.contact_phone?.toLowerCase().replace(/\s/g, '') === cleanPhone)) {
+        return { ok: false, error: 'This contact is already in your list.' };
+      }
+      if (isSupabase) {
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('phone', cleanPhone)
+          .maybeSingle();
+        const profile = prof as Profile | null;
+        const { error: insertErr } = await supabase.from('contacts').insert({
+          owner_id: me.id,
+          contact_profile_id: profile?.id ?? null,
+          contact_phone: cleanPhone,
+          contact_email: profile?.email ?? null,
+          contact_name: profile?.name ?? null,
+          username: null,
+          avatar_color: profile?.avatar_color ?? 'blue',
+        });
+        if (insertErr) {
+          return { ok: false, error: insertErr.message };
+        }
+      } else {
+        const allLocal = localStore.listProfiles();
+        const found = allLocal.find(
+          (p) => (p as unknown as { phone?: string }).phone?.toLowerCase().replace(/\s/g, '') === cleanPhone,
+        );
+        if (!found) {
+          return {
+            ok: false,
+            error: 'No registered user found with this phone number. Ask them to sign up first!',
           };
         }
       }
@@ -241,6 +304,8 @@ export function useChat() {
           partner: {
             id: r.partner_id,
             name: r.partner_name,
+            email: null,
+            phone: null,
             avatar_color: r.partner_avatar_color,
             is_focus_mode_active: r.partner_focus_active,
             focus_end_time: r.partner_focus_end,
@@ -826,6 +891,7 @@ export function useChat() {
     clearChatBackground,
     loadSharedMedia,
     addContactByEmail,
+    addContactByPhone,
     removeContact,
     refreshContacts,
     acceptInvite,

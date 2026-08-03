@@ -11,6 +11,7 @@ export function AuthModal() {
   const [tab, setTab] = useState<'signin' | 'signup'>('signup');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [color, setColor] = useState<AvatarColor>('blue');
   const [busy, setBusy] = useState(false);
@@ -26,7 +27,7 @@ export function AuthModal() {
       if (tab === 'signup') {
         if (!name.trim()) throw new Error('Please enter your name.');
         if (password.length < 6) throw new Error('Password must be at least 6 characters.');
-        await signUp(name.trim(), email.trim(), password, color);
+        await signUp(name.trim(), email.trim(), password, color, phone.trim() || undefined);
       } else {
         await signIn(email.trim(), password);
       }
@@ -74,16 +75,30 @@ export function AuthModal() {
 
         <form onSubmit={submit} className="space-y-4">
           {tab === 'signup' && (
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-slate-400">Name</label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Your display name"
-                className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 transition focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-500/20"
-              />
-            </div>
+            <>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-400">Name</label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Your display name"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 transition focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-500/20"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-400">
+                  Phone number <span className="text-slate-600">(optional)</span>
+                </label>
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="+1 555 123 4567"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 transition focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-500/20"
+                />
+              </div>
+            </>
           )}
 
           <div>

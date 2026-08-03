@@ -81,8 +81,9 @@ export function Sidebar({
     if (!q) return rows;
     return rows.filter((r) => {
       const name = r.profile?.name ?? r.contact.contact_name ?? '';
-      const email = r.contact.contact_email;
-      return name.toLowerCase().includes(q) || email.toLowerCase().includes(q);
+      const email = r.contact.contact_email ?? '';
+      const phone = r.contact.contact_phone ?? '';
+      return name.toLowerCase().includes(q) || email.toLowerCase().includes(q) || phone.toLowerCase().includes(q);
     });
   }, [rows, query]);
 
@@ -180,7 +181,7 @@ export function Sidebar({
             {filteredRows.map(({ contact, profile, lastMessage }) => {
               const contactId = profile?.id ?? contact.id;
               const isActive = profile?.id === selectedId;
-              const displayName = profile?.name ?? contact.contact_name ?? contact.contact_email.split('@')[0];
+              const displayName = profile?.name ?? contact.contact_name ?? contact.contact_email?.split('@')[0] ?? contact.contact_phone ?? 'Unknown';
               const theme = avatarTheme(profile?.avatar_color ?? 'blue');
               const partnerInFocus = profile?.is_focus_mode_active ?? false;
               const registered = !!profile;
@@ -244,7 +245,7 @@ export function Sidebar({
                           </p>
                         ) : (
                           <p className="truncate text-xs text-slate-500">
-                            {registered ? 'Tap to start chatting' : contact.contact_email}
+                            {registered ? 'Tap to start chatting' : (contact.contact_phone ?? contact.contact_email)}
                           </p>
                         )}
                       </div>

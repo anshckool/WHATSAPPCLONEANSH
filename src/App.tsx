@@ -72,6 +72,7 @@ function ChatApp() {
     clearChatBackground,
     loadSharedMedia,
     addContactByEmail,
+    addContactByPhone,
     removeContact,
     acceptInvite,
   } = useChat();
@@ -197,7 +198,8 @@ function ChatApp() {
       <AddContactModal
         open={addContactOpen}
         onClose={() => setAddContactOpen(false)}
-        onAdd={addContactByEmail}
+        onAddByEmail={addContactByEmail}
+        onAddByPhone={addContactByPhone}
         myEmail={user.email}
       />
 

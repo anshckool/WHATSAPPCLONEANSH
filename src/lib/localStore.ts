@@ -39,7 +39,7 @@ function makeId(): string {
 }
 
 export const localStore = {
-  signUp(name: string, email: string, password: string, avatarColor: AvatarColor): LocalProfile {
+  signUp(name: string, email: string, password: string, avatarColor: AvatarColor, phone?: string): LocalProfile {
     const users = readUsers();
     const exists = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
     if (exists) throw new Error('An account with this email already exists.');
@@ -48,6 +48,7 @@ export const localStore = {
       id: makeId(),
       name,
       email,
+      phone: phone ?? null,
       password,
       avatar_color: avatarColor,
       is_focus_mode_active: false,
@@ -116,13 +117,14 @@ export const localStore = {
    *  when Supabase says "already registered" but the user can't sign in
    *  (password mismatch). This breaks the auth loop by letting the user
    *  set a fresh password via the sign-up form. */
-  upsert(name: string, email: string, password: string, avatarColor: AvatarColor): LocalProfile {
+  upsert(name: string, email: string, password: string, avatarColor: AvatarColor, phone?: string): LocalProfile {
     const users = readUsers();
     const idx = users.findIndex((u) => u.email.toLowerCase() === email.toLowerCase());
     const user: LocalProfile = {
       id: idx !== -1 ? users[idx].id : makeId(),
       name,
       email,
+      phone: phone ?? null,
       password,
       avatar_color: avatarColor,
       is_focus_mode_active: false,
