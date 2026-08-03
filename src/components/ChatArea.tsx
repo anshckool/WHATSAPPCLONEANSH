@@ -8,15 +8,18 @@ import { MessageBubble } from '@/components/MessageBubble';
 import { MessageComposer } from '@/components/MessageComposer';
 import { ThemeButton } from '@/components/ThemeButton';
 import { formatDateDivider } from '@/lib/format';
-import type { AttachmentType, Contact, Message } from '@/lib/types';
+import type { MediaType, Message, Profile } from '@/lib/types';
 
 interface ChatAreaProps {
-  contact: Contact;
+  me: Profile;
+  partner: Profile;
   messages: Message[];
   loading: boolean;
   sending: boolean;
   onSendText: (text: string) => void;
-  onSendMedia: (file: File, kind: AttachmentType) => void;
+  onSendMedia: (file: File, kind: MediaType) => void;
+  onSendLocation: (lat: number, lng: number, live: boolean) => void;
+  onUpdateLiveLocation: (lat: number, lng: number) => void;
   focusActive: boolean;
   focusMinutesRemaining: number;
   onStartFocus: (minutes: number) => void;
@@ -38,12 +41,15 @@ function DateDivider({ label }: { label: string }) {
 }
 
 export function ChatArea({
-  contact,
+  me,
+  partner,
   messages,
   loading,
   sending,
   onSendText,
   onSendMedia,
+  onSendLocation,
+  onUpdateLiveLocation,
   focusActive,
   focusMinutesRemaining,
   onStartFocus,
@@ -56,18 +62,16 @@ export function ChatArea({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [profileOpen, setProfileOpen] = useState(false);
 
-  // Auto-scroll to bottom whenever messages change.
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, loading]);
 
-  // Group messages by day for date dividers.
   let lastDate = '';
+  const partnerInFocus = partner.is_focus_mode_active;
 
   return (
     <section className="relative flex h-full flex-col bg-slate-950">
-      {/* Optional background image, dimmed behind the messages */}
       {chatBackgroundUrl && (
         <div
           className="pointer-events-none absolute inset-0 bg-cover bg-center opacity-20"
@@ -76,17 +80,28 @@ export function ChatArea({
         />
       )}
       {/* Header */}
-      <header className="flex items-center justify-between border-b border-slate-800 bg-slate-900 px-4 py-3 sm:px-5">
+      <header className="relative flex items-center justify-between border-b border-slate-800 bg-slate-900 px-4 py-3 sm:px-5">
         <div className="flex items-center gap-3">
-          <Avatar name={contact.username} color={contact.avatar_color} size="md" online />
+          <Avatar
+            name={partner.name}
+            color={partner.avatar_color}
+            size="md"
+            online={!partnerInFocus}
+          />
           <button
             type="button"
             onClick={() => setProfileOpen(true)}
             className="leading-tight text-left transition hover:opacity-80"
-            aria-label={`View ${contact.username}'s profile`}
+            aria-label={`View ${partner.name}'s profile`}
           >
-            <h2 className="text-sm font-semibold text-slate-100">{contact.username}</h2>
-            <p className="text-xs text-emerald-400">Active now</p>
+            <h2 className="text-sm font-semibold text-slate-100">{partner.name}</h2>
+            <p
+              className={`text-xs ${
+                partnerInFocus ? 'text-purple-400' : 'text-emerald-400'
+              }`}
+            >
+              {partnerInFocus ? 'In focus mode' : 'Active now'}
+            </p>
           </button>
         </div>
         <div className="flex items-center gap-2">
@@ -109,17 +124,23 @@ export function ChatArea({
           >
             <Info className="h-5 w-5" />
           </button>
-          <button className="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-800 hover:text-slate-200" aria-label="Call">
+          <button
+            className="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-800 hover:text-slate-200"
+            aria-label="Call"
+          >
             <Phone className="h-5 w-5" />
           </button>
-          <button className="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-800 hover:text-slate-200" aria-label="Video call">
+          <button
+            className="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-800 hover:text-slate-200"
+            aria-label="Video call"
+          >
             <Video className="h-5 w-5" />
           </button>
         </div>
       </header>
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-4 sm:px-6">
+      <div ref={scrollRef} className="relative flex-1 overflow-y-auto px-3 py-4 sm:px-6">
         {loading ? (
           <div className="flex h-full items-center justify-center">
             <div className="flex items-center gap-2 text-slate-400">
@@ -130,7 +151,7 @@ export function ChatArea({
         ) : messages.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <p className="text-sm text-slate-500">
-              No messages yet. Say hello to {contact.username}.
+              No messages yet. Say hello to {partner.name}.
             </p>
           </div>
         ) : (
@@ -142,7 +163,7 @@ export function ChatArea({
               return (
                 <div key={m.id}>
                   {showDivider && <DateDivider label={day} />}
-                  <MessageBubble message={m} />
+                  <MessageBubble message={m} myId={me.id} />
                 </div>
               );
             })}
@@ -151,15 +172,19 @@ export function ChatArea({
       </div>
 
       {/* Composer */}
-      <MessageComposer
-        onSendText={onSendText}
-        onSendMedia={onSendMedia}
-        disabled={sending}
-        sending={sending}
-      />
+      <div className="relative">
+        <MessageComposer
+          onSendText={onSendText}
+          onSendMedia={onSendMedia}
+          onSendLocation={onSendLocation}
+          onUpdateLiveLocation={onUpdateLiveLocation}
+          disabled={sending}
+          sending={sending}
+        />
+      </div>
 
       <ContactProfile
-        contact={contact}
+        contact={partner}
         messageCount={messages.length}
         open={profileOpen}
         onClose={() => setProfileOpen(false)}

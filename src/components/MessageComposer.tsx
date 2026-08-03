@@ -1,16 +1,18 @@
 import { useRef, useState } from 'react';
-import { Loader2, Paperclip, Send } from 'lucide-react';
-import type { AttachmentType } from '@/lib/types';
+import { Loader2, MapPin, Navigation, Paperclip, Send } from 'lucide-react';
+import type { MediaType } from '@/lib/types';
 
 interface MessageComposerProps {
   onSendText: (text: string) => void;
-  onSendMedia: (file: File, kind: AttachmentType) => void;
+  onSendMedia: (file: File, kind: MediaType) => void;
+  onSendLocation: (lat: number, lng: number, live: boolean) => void;
+  onUpdateLiveLocation?: (lat: number, lng: number) => void;
   disabled: boolean;
   sending: boolean;
 }
 
 const ATTACH_OPTIONS: {
-  kind: AttachmentType;
+  kind: MediaType;
   label: string;
   accept: string;
   icon: string;
@@ -42,13 +44,17 @@ const ATTACH_OPTIONS: {
 export function MessageComposer({
   onSendText,
   onSendMedia,
+  onSendLocation,
+  onUpdateLiveLocation,
   disabled,
   sending,
 }: MessageComposerProps) {
   const [text, setText] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [liveWatchId, setLiveWatchId] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const pendingKind = useRef<AttachmentType>('image');
+  const pendingKind = useRef<MediaType>('image');
 
   const submitText = (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,7 +63,7 @@ export function MessageComposer({
     setText('');
   };
 
-  const openPicker = (kind: AttachmentType, accept: string) => {
+  const openPicker = (kind: MediaType, accept: string) => {
     pendingKind.current = kind;
     if (fileRef.current) {
       fileRef.current.accept = accept;
@@ -72,26 +78,94 @@ export function MessageComposer({
     e.target.value = '';
   };
 
+  const stopLive = () => {
+    if (liveWatchId !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(liveWatchId);
+    }
+    setLiveWatchId(null);
+  };
+
+  const sendCurrentLocation = () => {
+    setMenuOpen(false);
+    if (!navigator.geolocation) return;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocating(false);
+        onSendLocation(pos.coords.latitude, pos.coords.longitude, false);
+      },
+      () => {
+        setLocating(false);
+        alert('Could not get your location. Please allow location access.');
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  };
+
+  const toggleLiveLocation = () => {
+    setMenuOpen(false);
+    if (!navigator.geolocation) return;
+    if (liveWatchId !== null) {
+      stopLive();
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocating(false);
+        onSendLocation(pos.coords.latitude, pos.coords.longitude, true);
+        // Start watching for movement and push updates.
+        const id = navigator.geolocation.watchPosition(
+          (p) => onUpdateLiveLocation?.(p.coords.latitude, p.coords.longitude),
+          () => {},
+          { enableHighAccuracy: true, maximumAge: 5000 },
+        );
+        setLiveWatchId(id);
+      },
+      () => {
+        setLocating(false);
+        alert('Could not get your location. Please allow location access.');
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  };
+
   return (
     <div className="border-t border-slate-800 bg-slate-900 px-3 py-3 sm:px-5">
+      {liveWatchId !== null && (
+        <div className="mb-2 flex items-center justify-between rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-300">
+          <span className="flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+            Live location sharing — updates as you move
+          </span>
+          <button
+            type="button"
+            onClick={stopLive}
+            className="font-medium text-emerald-200 underline-offset-2 hover:underline"
+          >
+            Stop
+          </button>
+        </div>
+      )}
       <form onSubmit={submitText} className="flex items-end gap-2">
         {/* Attach menu */}
         <div className="relative">
           <button
             type="button"
             onClick={() => setMenuOpen((o) => !o)}
-            disabled={disabled}
+            disabled={disabled || locating}
             className="flex h-10 w-10 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 disabled:opacity-40"
             aria-label="Attach media"
           >
-            <Paperclip className="h-5 w-5" />
+            {locating ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <Paperclip className="h-5 w-5" />
+            )}
           </button>
           {menuOpen && (
             <>
-              <div
-                className="fixed inset-0 z-10"
-                onClick={() => setMenuOpen(false)}
-              />
+              <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
               <div className="absolute bottom-12 left-0 z-20 w-44 overflow-hidden rounded-xl border border-slate-700 bg-slate-900 py-1 shadow-xl animate-[fadeInUp_0.15s_ease-out]">
                 {ATTACH_OPTIONS.map((opt) => (
                   <button
@@ -115,6 +189,24 @@ export function MessageComposer({
                     {opt.label}
                   </button>
                 ))}
+                {/* Divider before location */}
+                <div className="my-1 border-t border-slate-800" />
+                <button
+                  type="button"
+                  onClick={sendCurrentLocation}
+                  className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-slate-200 transition hover:bg-slate-800"
+                >
+                  <MapPin className="h-5 w-5 text-rose-400" />
+                  Current location
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleLiveLocation}
+                  className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-slate-200 transition hover:bg-slate-800"
+                >
+                  <Navigation className="h-5 w-5 text-emerald-400" />
+                  {liveWatchId !== null ? 'Stop live location' : 'Share live location'}
+                </button>
               </div>
             </>
           )}
@@ -151,12 +243,7 @@ export function MessageComposer({
         </button>
       </form>
 
-      <input
-        ref={fileRef}
-        type="file"
-        className="hidden"
-        onChange={onFileChange}
-      />
+      <input ref={fileRef} type="file" className="hidden" onChange={onFileChange} />
     </div>
   );
 }

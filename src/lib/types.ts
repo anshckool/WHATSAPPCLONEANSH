@@ -6,18 +6,39 @@ export type AvatarColor =
   | 'violet'
   | 'blue';
 
-export interface Contact {
+export const AVATAR_COLORS: AvatarColor[] = [
+  'amber',
+  'rose',
+  'emerald',
+  'sky',
+  'violet',
+  'blue',
+];
+
+export type AttachmentType = 'image' | 'video' | 'document' | 'location';
+
+/** Media attachments that go through the file picker (location has its own path). */
+export type MediaType = 'image' | 'video' | 'document';
+
+/** A registered user's profile. `id` matches their Supabase Auth user id. */
+export interface Profile {
   id: string;
-  username: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
   avatar_color: AvatarColor;
+  is_focus_mode_active: boolean;
+  focus_end_time: string | null;
+  focus_session_id: string | null;
+  chat_background_url: string | null;
   created_at: string;
 }
 
-export type AttachmentType = 'image' | 'video' | 'document';
-
 export interface Message {
   id: string;
-  contact_id: string;
+  contact_id: string | null;
+  sender_id: string | null;
+  receiver_id: string | null;
   is_from_me: boolean;
   is_system: boolean;
   content: string | null;
@@ -25,21 +46,27 @@ export interface Message {
   attachment_url: string | null;
   attachment_name: string | null;
   attachment_size: number | null;
+  location_lat: number | null;
+  location_lng: number | null;
+  is_live_location: boolean;
   created_at: string;
 }
 
-/** Contact enriched with its most recent message, used to render the sidebar. */
-export interface Conversation extends Contact {
+/** A conversation partner + their most recent message, for the sidebar. */
+export interface Conversation {
+  partner: Profile;
   last_message: Message | null;
 }
 
-/** Singleton row representing the app user (Ansh) and their Focus Mode state. */
-export interface AppUser {
+/** A saved contact entry. `profile` is null if the person hasn't registered yet. */
+export interface ContactEntry {
   id: string;
-  name: string;
-  is_focus_mode_active: boolean;
-  focus_end_time: string | null;
-  focus_session_id: string | null;
-  chat_background_url: string | null;
-  updated_at: string;
+  owner_id: string;
+  contact_profile_id: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  contact_name: string | null;
+  created_at: string;
+  /** Resolved profile if the contact has registered, else null. */
+  profile: Profile | null;
 }

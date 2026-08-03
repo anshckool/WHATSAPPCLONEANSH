@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Calendar, Film, ImageIcon, Loader2, X } from 'lucide-react';
 import { Avatar } from '@/components/Avatar';
-import { formatRelative, formatSize } from '@/lib/format';
-import type { Contact } from '@/lib/types';
+import { formatRelative } from '@/lib/format';
+import type { Profile } from '@/lib/types';
 
 export interface SharedMediaItem {
   id: string;
@@ -13,7 +13,7 @@ export interface SharedMediaItem {
 }
 
 interface ContactProfileProps {
-  contact: Contact;
+  contact: Profile;
   messageCount: number;
   open: boolean;
   onClose: () => void;
@@ -86,10 +86,12 @@ export function ContactProfile({
         <div className="flex-1 overflow-y-auto">
           {/* Identity */}
           <div className="flex flex-col items-center gap-3 px-6 py-6 text-center">
-            <Avatar name={contact.username} color={contact.avatar_color} size="lg" online />
+            <Avatar name={contact.name} color={contact.avatar_color} size="lg" online={!contact.is_focus_mode_active} />
             <div>
-              <h3 className="text-lg font-semibold text-slate-100">{contact.username}</h3>
-              <p className="text-xs text-emerald-400">Active now</p>
+              <h3 className="text-lg font-semibold text-slate-100">{contact.name}</h3>
+              <p className={`text-xs ${contact.is_focus_mode_active ? 'text-purple-400' : 'text-emerald-400'}`}>
+                {contact.is_focus_mode_active ? 'In focus mode' : 'Active now'}
+              </p>
             </div>
             <div className="flex items-center gap-1.5 text-xs text-slate-500">
               <Calendar className="h-3.5 w-3.5" />
